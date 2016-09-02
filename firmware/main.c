@@ -156,6 +156,25 @@ void boot_delay_ms(int delay){
     tc(TC_BOOT)->COUNT16.CTRLA.bit.ENABLE = 0;
 }
 
+void MT7620_POR() {
+    pin_low(PIN_SOC_RST);
+    pin_out(PIN_SOC_RST);
+    boot_delay_ms(50);
+    pin_in(PIN_SOC_RST);
+}
+
+void reset_init() {
+    pin_in(PIN_BTN);
+    eic_config(PIN_BTN, EIC_CONFIG_SENSE_FALL);
+    pin_mux_eic(PIN_BTN);
+    EIC->INTENSET.bit.EXTINT9 = 1;
+}
+
+void reset_handler() {
+    MT7620_POR();
+    EIC->INTFLAG.reg = EIC_INTFLAG_EXTINT9;
+}
+
 int main(void) {
     if (PM->RCAUSE.reg & (PM_RCAUSE_POR | PM_RCAUSE_BOD12 | PM_RCAUSE_BOD33)) {
         // On powerup, force a clean reset of the MT7620
@@ -235,6 +254,8 @@ int main(void) {
     __enable_irq();
     SCB->SCR |= SCB_SCR_SLEEPONEXIT_Msk;
 
+    reset_init();
+
     init_breathing_animation();
 
     while (1) { __WFI(); }
@@ -272,7 +293,9 @@ void DMAC_Handler() {
 
 void EIC_Handler() {
     u32 flags = EIC->INTFLAG.reg;
-    if (flags & PORT_A.pin_interrupts) {
+    if (flags &  (1 << 9)) {
+        reset_handler();
+    } else if (flags & PORT_A.pin_interrupts) {
         port_handle_extint(&port_a, flags);
     } else if (flags & PORT_B.pin_interrupts) {
         port_handle_extint(&port_b, flags);
